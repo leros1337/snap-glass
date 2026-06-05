@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, without the leading v"
+        required: true
+        type: string
+        default: "0.1.0"
+      prerelease:
+        description: "Mark the GitHub release as a prerelease"
+        required: true
+        type: boolean
+        default: false
+      draft:
+        description: "Create the GitHub release as a draft"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and release DMG
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    env:
+      SNAPGLASS_VERSION: ${{ inputs.version }}
+      SNAPGLASS_BUILD: ${{ github.run_number }}
+      SNAPGLASS_DMG_NAME: SnapGlass-${{ inputs.version }}.dmg
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show build environment
+        run: |
+          sw_vers
+          uname -m
+          swift --version
+          xcodebuild -version
+
+      - name: Build and test
+        run: swift test
+
+      - name: Build DMG
+        run: Scripts/package-dmg.sh
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: SnapGlass-${{ inputs.version }}-dmg
+          path: .build/dist/SnapGlass-${{ inputs.version }}.dmg
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: v${{ inputs.version }}
+          RELEASE_NAME: SnapGlass ${{ inputs.version }}
+          DMG_PATH: .build/dist/SnapGlass-${{ inputs.version }}.dmg
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$DMG_PATH" --clobber
+          else
+            args=(
+              "$TAG_NAME"
+              "$DMG_PATH"
+              --title "$RELEASE_NAME"
+              --notes "SnapGlass ${SNAPGLASS_VERSION}"
+              --target "$GITHUB_SHA"
+            )
+
+            if [[ "${{ inputs.prerelease }}" == "true" ]]; then
+              args+=(--prerelease)
+            fi
+
+            if [[ "${{ inputs.draft }}" == "true" ]]; then
+              args+=(--draft)
+            fi
+
+            gh release create "${args[@]}"
+          fi
