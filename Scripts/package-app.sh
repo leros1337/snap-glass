@@ -9,6 +9,7 @@ RESOURCES_DIR="$CONTENTS_DIR/Resources"
 ICON_FILE="$ROOT_DIR/Resources/SnapGlassIcon.icns"
 APP_VERSION="${SNAPGLASS_VERSION:-0.1.0}"
 APP_BUILD="${SNAPGLASS_BUILD:-1}"
+CODESIGN_IDENTITY="${SNAPGLASS_CODESIGN_IDENTITY:--}"
 
 cd "$ROOT_DIR"
 export CLANG_MODULE_CACHE_PATH="$ROOT_DIR/.build/clang-module-cache"
@@ -51,5 +52,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_DIR"
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 echo "Packaged $APP_DIR"
