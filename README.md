@@ -16,28 +16,8 @@ It provides:
 - Apple silicon Mac
 - macOS 26 or newer
 - Xcode 26.5 or newer
-
-## Development
-
-```sh
-swift test
-swift run SnapGlass
-```
-
-If SwiftPM attempts to write module cache files outside the repository in a restricted environment:
-
-```sh
-env CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-module-cache" swift test
-```
-
-## Package App
-
-```sh
-Scripts/package-app.sh
-open .build/SnapGlass.app
-```
-
-The app is packaged as `arm64` only.
+- The app is packaged as `arm64` only
+- I am not ios developer and dont have dev account, so allow run it manually in Security settings or build yourself
 
 ## Install With Homebrew
 
@@ -61,18 +41,22 @@ To package a specific version:
 SNAPGLASS_VERSION=1.2.3 SNAPGLASS_BUILD=42 Scripts/package-dmg.sh
 ```
 
-## GitHub Release
+## Development
 
-The `Release` workflow can be started from GitHub Actions with `workflow_dispatch`.
+```sh
+swift test
+swift run SnapGlass
+```
 
-Inputs:
+If SwiftPM attempts to write module cache files outside the repository in a restricted environment:
 
-- `version`: release version without `v`, for example `1.2.3`
-- `prerelease`: mark the release as prerelease
-- `draft`: create the release as a draft
+```sh
+env CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-module-cache" swift test
+```
 
-The workflow runs on GitHub's public `macos-26` arm64 runner, builds and tests the app, packages `SnapGlass-<version>.dmg`, uploads it as a workflow artifact, and attaches it to a GitHub release tagged `v<version>`.
+## Package App
 
-## License
-
-Apache License 2.0. See `LICENSE`.
+```sh
+Scripts/package-app.sh
+open .build/SnapGlass.app
+```
