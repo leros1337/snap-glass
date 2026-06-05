@@ -2,6 +2,8 @@
 
 SnapGlass is a small Apple silicon macOS menu bar app inspired by Snap.
 
+![SnapGlass preferences preview](preview.png)
+
 It provides:
 
 - automatic Dock shortcuts using a selected modifier plus number keys
