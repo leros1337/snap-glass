@@ -39,6 +39,13 @@ open .build/SnapGlass.app
 
 The app is packaged as `arm64` only.
 
+## Install With Homebrew
+
+```sh
+brew tap leros1337/tap
+brew install --cask snap-glass
+```
+
 ## Package DMG
 
 ```sh
