@@ -5,17 +5,19 @@ protocol AppLaunching: Sendable {
     @MainActor func activateOrPeek(_ app: AppRecord)
 }
 
-final class WorkspaceAppLauncher: AppLaunching, @unchecked Sendable {
+@MainActor
+final class WorkspaceAppLauncher: AppLaunching {
+    private static let peekWindow: TimeInterval = 1.2
+
     private var lastActivatedBundleID: String?
     private var lastActivationDate: Date = .distantPast
 
-    @MainActor
     func activateOrPeek(_ app: AppRecord) {
         if
             let bundleIdentifier = app.bundleIdentifier,
             let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first
         {
-            if lastActivatedBundleID == bundleIdentifier && Date().timeIntervalSince(lastActivationDate) < 1.2 {
+            if lastActivatedBundleID == bundleIdentifier && Date().timeIntervalSince(lastActivationDate) < Self.peekWindow {
                 running.hide()
                 lastActivatedBundleID = nil
                 return
@@ -32,11 +34,12 @@ final class WorkspaceAppLauncher: AppLaunching, @unchecked Sendable {
         NSWorkspace.shared.openApplication(
             at: URL(fileURLWithPath: app.path),
             configuration: configuration
-        ) { [weak self] application, _ in
-            guard let self, let application else { return }
-            Task { @MainActor in
-                self.lastActivatedBundleID = application.bundleIdentifier
-                self.lastActivationDate = Date()
+        ) { application, _ in
+            guard let application else { return }
+            let bundleIdentifier = application.bundleIdentifier
+            Task { @MainActor [weak self] in
+                self?.lastActivatedBundleID = bundleIdentifier
+                self?.lastActivationDate = Date()
             }
         }
     }

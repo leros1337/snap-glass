@@ -6,18 +6,31 @@ protocol DockReading: Sendable {
 }
 
 struct DockReader: DockReading {
-    func dockApps() throws -> [AppRecord] {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Preferences/com.apple.dock.plist")
-        let data = try Data(contentsOf: url)
-        guard
-            let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-            let persistentApps = plist["persistent-apps"] as? [[String: Any]]
-        else {
-            return []
-        }
+    private static let dockDomain = "com.apple.dock"
+    private static let persistentAppsKey = "persistent-apps"
 
-        return persistentApps.compactMap(appRecord(from:))
+    func dockApps() throws -> [AppRecord] {
+        let persistentApps = try preferencePersistentApps() ?? filePersistentApps()
+        return (persistentApps ?? []).compactMap(appRecord(from:))
+    }
+
+    /// Reads the live value through `cfprefsd`, which owns the Dock preferences and may not have
+    /// flushed recent changes to disk yet.
+    private func preferencePersistentApps() -> [[String: Any]]? {
+        CFPreferencesCopyAppValue(
+            Self.persistentAppsKey as CFString,
+            Self.dockDomain as CFString
+        ) as? [[String: Any]]
+    }
+
+    /// Fallback for environments where the preference domain is not readable.
+    private func filePersistentApps() throws -> [[String: Any]]? {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences/\(Self.dockDomain).plist")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        return plist?[Self.persistentAppsKey] as? [[String: Any]]
     }
 
     private func appRecord(from tile: [String: Any]) -> AppRecord? {

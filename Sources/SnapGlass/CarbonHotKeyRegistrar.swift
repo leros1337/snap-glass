@@ -16,6 +16,15 @@ final class CarbonHotKeyRegistrar: HotKeyRegistering {
     private var handler: (@MainActor (ShortcutAssignment) -> Void)?
     private var eventHandler: EventHandlerRef?
 
+    isolated deinit {
+        for case let hotKey? in hotKeys {
+            UnregisterEventHotKey(hotKey)
+        }
+        if let eventHandler {
+            RemoveEventHandler(eventHandler)
+        }
+    }
+
     func register(
         assignments: [ShortcutAssignment],
         handler: @escaping @MainActor (ShortcutAssignment) -> Void
@@ -72,7 +81,9 @@ final class CarbonHotKeyRegistrar: HotKeyRegistering {
                     nil,
                     &hotKeyID
                 )
-                Task { @MainActor in
+                // Handlers on the application event target are always invoked on the main thread,
+                // so dispatching a Task per key press is unnecessary.
+                MainActor.assumeIsolated {
                     registrar.fire(id: hotKeyID.id)
                 }
                 return noErr

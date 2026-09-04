@@ -1,20 +1,27 @@
 import Foundation
+import Observation
 import SnapGlassCore
 
 @MainActor
-final class ShortcutCoordinator: ObservableObject {
-    @Published private(set) var dockAssignments: [ShortcutAssignment] = []
-    @Published private(set) var manualShortcuts: [ManualShortcut] = []
-    @Published private(set) var errorMessage: String?
-    @Published var automaticModifier: ShortcutModifier = .command {
-        didSet { reload() }
+@Observable
+final class ShortcutCoordinator {
+    private(set) var dockAssignments: [ShortcutAssignment] = []
+    private(set) var manualShortcuts: [ManualShortcut] = []
+    private(set) var errorMessage: String?
+    var automaticModifier: ShortcutModifier {
+        didSet {
+            guard oldValue != automaticModifier else { return }
+            AppSettings.automaticModifier = automaticModifier
+            reload()
+        }
     }
 
-    private let dockReader: DockReading
-    private let store: ManualShortcutPersisting
-    private let launcher: AppLaunching
-    private let registrar: HotKeyRegistering
-    private let planner = ShortcutPlanner()
+    @ObservationIgnored private let dockReader: DockReading
+    @ObservationIgnored private let store: ManualShortcutPersisting
+    @ObservationIgnored private let launcher: AppLaunching
+    @ObservationIgnored private let registrar: HotKeyRegistering
+    @ObservationIgnored private let planner = ShortcutPlanner()
+    @ObservationIgnored private var dockApps: [AppRecord] = []
 
     init(
         dockReader: DockReading,
@@ -26,6 +33,7 @@ final class ShortcutCoordinator: ObservableObject {
         self.store = store
         self.launcher = launcher
         self.registrar = registrar
+        self.automaticModifier = AppSettings.automaticModifier
     }
 
     var allAssignments: [ShortcutAssignment] {
@@ -35,14 +43,12 @@ final class ShortcutCoordinator: ObservableObject {
         )
     }
 
+    /// Re-reads the manual shortcut file and the Dock, then re-registers all hotkeys.
     func reload() {
         do {
             manualShortcuts = try store.load()
-            let dockApps = try dockReader.dockApps()
-            dockAssignments = planner.dockAssignments(for: dockApps, modifier: automaticModifier)
-            try registrar.register(assignments: allAssignments) { [weak self] assignment in
-                self?.launcher.activateOrPeek(assignment.app)
-            }
+            dockApps = try dockReader.dockApps()
+            try registerAll()
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -65,19 +71,34 @@ final class ShortcutCoordinator: ObservableObject {
         do {
             try store.save([])
             manualShortcuts = []
+            // Assigning the modifier triggers `didSet`, which reloads once when the value changes.
+            // If it was already `.command`, reload explicitly so the cleared manual shortcuts unregister.
+            let needsExplicitReload = automaticModifier == .command
             automaticModifier = .command
-            reload()
+            if needsExplicitReload {
+                reload()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
+    /// Persists the in-memory manual shortcuts and re-registers hotkeys without re-reading from disk.
     private func persistManualShortcuts() {
         do {
             try store.save(manualShortcuts)
-            reload()
+            try registerAll()
+            errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Plans Dock assignments from the cached Dock apps and registers every hotkey.
+    private func registerAll() throws {
+        dockAssignments = planner.dockAssignments(for: dockApps, modifier: automaticModifier)
+        try registrar.register(assignments: allAssignments) { [weak self] assignment in
+            self?.launcher.activateOrPeek(assignment.app)
         }
     }
 }

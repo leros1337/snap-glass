@@ -2,15 +2,15 @@ import SnapGlassCore
 import SwiftUI
 
 struct PreferencesView: View {
-    @ObservedObject var model: PreferencesModel
-    @ObservedObject private var coordinator: ShortcutCoordinator
+    @Bindable private var model: PreferencesModel
+    @Bindable private var coordinator: ShortcutCoordinator
     @State private var isResetConfirmationPresented = false
 
-    private let keys = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    private static let keys = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
 
     init(model: PreferencesModel) {
-        self.model = model
-        self.coordinator = model.coordinator
+        _model = Bindable(model)
+        _coordinator = Bindable(model.coordinator)
     }
 
     var body: some View {
@@ -146,11 +146,12 @@ struct PreferencesView: View {
     private var shortcutControls: some View {
         HStack(spacing: 12) {
             Picker("Application", selection: $model.selectedApp) {
-                Text("Choose app").tag(AppRecord?.none)
+                Text(model.isLoadingApps ? "Loading apps…" : "Choose app").tag(AppRecord?.none)
                 ForEach(model.installedApps) { app in
                     Text(app.name).tag(Optional(app))
                 }
             }
+            .disabled(model.isLoadingApps)
             .frame(minWidth: 260)
 
             Picker("Modifier", selection: $model.selectedModifier) {
@@ -162,7 +163,7 @@ struct PreferencesView: View {
             .frame(width: 180)
 
             Picker("Key", selection: $model.selectedKey) {
-                ForEach(keys, id: \.self) { key in
+                ForEach(Self.keys, id: \.self) { key in
                     Text(key).tag(key)
                 }
             }
@@ -173,6 +174,7 @@ struct PreferencesView: View {
             } label: {
                 Image(systemName: "plus")
             }
+            .disabled(model.selectedApp == nil)
             .help("Add manual shortcut")
         }
         .padding(14)
@@ -187,26 +189,28 @@ struct PreferencesView: View {
                 Text("Manual")
                     .font(.headline)
                 ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(coordinator.manualShortcuts) { shortcut in
-                            HStack {
-                                Text(shortcut.app.name)
-                                Spacer()
-                                Text("\(shortcut.modifier.symbol)\(shortcut.key)")
-                                    .font(.system(.body, design: .rounded).weight(.semibold))
-                                    .monospaced()
-                                Button(role: .destructive) {
-                                    coordinator.removeManualShortcut(shortcut)
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .frame(width: 18, height: 18)
+                    GlassEffectContainer(spacing: 8) {
+                        LazyVStack(spacing: 8) {
+                            ForEach(coordinator.manualShortcuts) { shortcut in
+                                HStack {
+                                    Text(shortcut.app.name)
+                                    Spacer()
+                                    Text("\(shortcut.modifier.symbol)\(shortcut.key)")
+                                        .font(.system(.body, design: .rounded).weight(.semibold))
+                                        .monospaced()
+                                    Button(role: .destructive) {
+                                        coordinator.removeManualShortcut(shortcut)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .frame(width: 18, height: 18)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .help("Remove manual shortcut")
                                 }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .help("Remove manual shortcut")
+                                .padding(10)
+                                .glassPanel(cornerRadius: 12)
                             }
-                            .padding(10)
-                            .glassPanel(cornerRadius: 12)
                         }
                     }
                 }
@@ -221,18 +225,20 @@ struct PreferencesView: View {
             Text(title)
                 .font(.headline)
             ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(assignments) { assignment in
-                        HStack {
-                            Text(assignment.displayShortcut)
-                                .font(.system(.body, design: .rounded).weight(.bold))
-                                .frame(width: 46, alignment: .leading)
-                            Text(assignment.app.name)
-                                .lineLimit(1)
-                            Spacer()
+                GlassEffectContainer(spacing: 8) {
+                    LazyVStack(spacing: 8) {
+                        ForEach(assignments) { assignment in
+                            HStack {
+                                Text(assignment.displayShortcut)
+                                    .font(.system(.body, design: .rounded).weight(.bold))
+                                    .frame(width: 46, alignment: .leading)
+                                Text(assignment.app.name)
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(10)
+                            .glassPanel(cornerRadius: 12)
                         }
-                        .padding(10)
-                        .glassPanel(cornerRadius: 12)
                     }
                 }
             }
@@ -243,19 +249,8 @@ struct PreferencesView: View {
 }
 
 private extension View {
-    @ViewBuilder
     func glassPanel(cornerRadius: CGFloat) -> some View {
-        if #available(macOS 26.0, *) {
-            self
-                .padding(1)
-                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-        } else {
-            self
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .stroke(.white.opacity(0.35), lineWidth: 1)
-                )
-        }
+        padding(1)
+            .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
     }
 }

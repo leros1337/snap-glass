@@ -63,33 +63,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showPreferences() {
         guard let coordinator else { return }
+        let window = preferencesWindow ?? makePreferencesWindow(coordinator: coordinator)
         if preferencesWindow == nil {
-            let view = PreferencesView(
-                model: PreferencesModel(
-                    coordinator: coordinator,
-                    statusIconVisibilityChanged: { [weak self] isVisible in
-                        self?.setStatusIconVisible(isVisible)
-                    }
-                )
-            )
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "SnapGlass"
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-            window.isMovableByWindowBackground = true
-            window.delegate = self
-            window.contentView = NSHostingView(rootView: view)
             preferencesWindow = window
+            window.center()
         }
-
-        preferencesWindow?.center()
-        preferencesWindow?.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate()
+    }
+
+    /// The window and its SwiftUI hierarchy are built on demand and released again when closed,
+    /// so the idle menu bar process does not keep the preferences UI resident.
+    private func makePreferencesWindow(coordinator: ShortcutCoordinator) -> NSWindow {
+        let view = PreferencesView(
+            model: PreferencesModel(
+                coordinator: coordinator,
+                statusIconVisibilityChanged: { [weak self] isVisible in
+                    self?.setStatusIconVisible(isVisible)
+                }
+            )
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "SnapGlass"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: view)
+        return window
     }
 
     @objc private func reloadShortcuts() {
@@ -126,8 +133,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSWindowDelegate {
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        sender.orderOut(nil)
-        return false
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === preferencesWindow else { return }
+        window.delegate = nil
+        window.contentView = nil
+        preferencesWindow = nil
     }
 }

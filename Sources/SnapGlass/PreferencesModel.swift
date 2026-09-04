@@ -1,30 +1,37 @@
 import AppKit
+import Observation
 import ServiceManagement
 import SnapGlassCore
 
 @MainActor
-final class PreferencesModel: ObservableObject {
-    @Published var selectedApp: AppRecord?
-    @Published var selectedModifier: ShortcutModifier = .option
-    @Published var selectedKey = "A"
-    @Published var launchAtLogin: Bool {
+@Observable
+final class PreferencesModel {
+    var selectedApp: AppRecord?
+    var selectedModifier: ShortcutModifier = .option
+    var selectedKey = "A"
+    var launchAtLogin: Bool {
         didSet {
             updateLaunchAtLogin()
         }
     }
-    @Published var showStatusIcon: Bool {
+    var showStatusIcon: Bool {
         didSet {
             guard !isResetting else { return }
             AppSettings.isStatusIconVisible = showStatusIcon
             statusIconVisibilityChanged(showStatusIcon)
         }
     }
-    @Published var settingsError: String?
+    var settingsError: String?
+
+    /// Installed applications, loaded once in the background rather than on every view update.
+    private(set) var installedApps: [AppRecord] = []
+    private(set) var isLoadingApps = false
 
     let coordinator: ShortcutCoordinator
-    private let statusIconVisibilityChanged: (Bool) -> Void
-    private var isSyncingLaunchAtLogin = false
-    private var isResetting = false
+    @ObservationIgnored private let statusIconVisibilityChanged: (Bool) -> Void
+    @ObservationIgnored private var isSyncingLaunchAtLogin = false
+    @ObservationIgnored private var isResetting = false
+    @ObservationIgnored private var appScanTask: Task<Void, Never>?
 
     init(
         coordinator: ShortcutCoordinator,
@@ -34,33 +41,26 @@ final class PreferencesModel: ObservableObject {
         self.statusIconVisibilityChanged = statusIconVisibilityChanged
         self.launchAtLogin = SMAppService.mainApp.status == .enabled
         self.showStatusIcon = AppSettings.isStatusIconVisible
+        refreshInstalledApps()
     }
 
-    var installedApps: [AppRecord] {
-        let directories = [
-            "/Applications",
-            "\(FileManager.default.homeDirectoryForCurrentUser.path)/Applications",
-            "/System/Applications",
-            "/System/Applications/Utilities"
-        ]
-        let urls = directories.flatMap { directory -> [URL] in
-            (try? FileManager.default.contentsOfDirectory(
-                at: URL(fileURLWithPath: directory),
-                includingPropertiesForKeys: [.isApplicationKey],
-                options: [.skipsHiddenFiles]
-            )) ?? []
-        }
+    deinit {
+        appScanTask?.cancel()
+    }
 
-        return urls
-            .filter { $0.pathExtension == "app" }
-            .map { url in
-                let bundle = Bundle(url: url)
-                let name = (bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
-                    ?? (bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String)
-                    ?? url.deletingPathExtension().lastPathComponent
-                return AppRecord(name: name, bundleIdentifier: bundle?.bundleIdentifier, path: url.path)
+    /// Scans the standard application folders off the main thread and publishes the result once.
+    func refreshInstalledApps() {
+        guard appScanTask == nil else { return }
+        isLoadingApps = true
+        appScanTask = Task.detached(priority: .utility) { [weak self] in
+            let apps = InstalledAppScanner.scan()
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.installedApps = apps
+                self.isLoadingApps = false
+                self.appScanTask = nil
             }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        }
     }
 
     func addSelectedShortcut() {
@@ -110,5 +110,58 @@ final class PreferencesModel: ObservableObject {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             isSyncingLaunchAtLogin = false
         }
+    }
+}
+
+/// Enumerates `.app` bundles without instantiating `Bundle` objects. `Bundle(url:)` populates a
+/// process-wide CFBundle cache that is never released, so reading each Info.plist directly keeps
+/// the scan from growing the app's resident memory.
+enum InstalledAppScanner {
+    static let searchDirectories: [URL] = [
+        URL(fileURLWithPath: "/Applications", isDirectory: true),
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
+        URL(fileURLWithPath: "/System/Applications", isDirectory: true),
+        URL(fileURLWithPath: "/System/Applications/Utilities", isDirectory: true)
+    ]
+
+    static func scan(directories: [URL] = searchDirectories) -> [AppRecord] {
+        let fileManager = FileManager.default
+        var seenPaths = Set<String>()
+        var records: [AppRecord] = []
+
+        for directory in directories {
+            let urls = (try? fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isApplicationKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+
+            for url in urls where isApplication(url) {
+                let path = url.path(percentEncoded: false)
+                guard seenPaths.insert(path).inserted else { continue }
+                records.append(record(for: url, path: path))
+            }
+        }
+
+        return records.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Some system apps (for example cryptex-backed Safari) report `isApplication == false`,
+    /// so the bundle extension remains the primary signal.
+    private static func isApplication(_ url: URL) -> Bool {
+        if url.pathExtension == "app" { return true }
+        return (try? url.resourceValues(forKeys: [.isApplicationKey]).isApplication) ?? false
+    }
+
+    private static func record(for url: URL, path: String) -> AppRecord {
+        let info = CFBundleCopyInfoDictionaryForURL(url as CFURL) as? [String: Any] ?? [:]
+        let name = (info["CFBundleDisplayName"] as? String)
+            ?? (info["CFBundleName"] as? String)
+            ?? url.deletingPathExtension().lastPathComponent
+        return AppRecord(
+            name: name,
+            bundleIdentifier: info["CFBundleIdentifier"] as? String,
+            path: path
+        )
     }
 }

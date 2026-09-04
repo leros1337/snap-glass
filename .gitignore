@@ -1,6 +1,8 @@
 .DS_Store
 .build/
 .swiftpm/
+# Local state written by MCP/agent tooling
+data/
 *.app/
 *.dmg
 *.zip

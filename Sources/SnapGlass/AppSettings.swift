@@ -1,21 +1,36 @@
 import Foundation
+import SnapGlassCore
 
 enum AppSettings {
     private static let statusIconVisibleKey = "statusIconVisible"
+    private static let automaticModifierKey = "automaticModifier"
+
+    private static var defaults: UserDefaults { .standard }
 
     static var isStatusIconVisible: Bool {
         get {
-            guard UserDefaults.standard.object(forKey: statusIconVisibleKey) != nil else {
+            guard defaults.object(forKey: statusIconVisibleKey) != nil else {
                 return true
             }
-            return UserDefaults.standard.bool(forKey: statusIconVisibleKey)
+            return defaults.bool(forKey: statusIconVisibleKey)
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: statusIconVisibleKey)
+            defaults.set(newValue, forKey: statusIconVisibleKey)
+        }
+    }
+
+    static var automaticModifier: ShortcutModifier {
+        get {
+            defaults.string(forKey: automaticModifierKey)
+                .flatMap(ShortcutModifier.init(rawValue:)) ?? .command
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: automaticModifierKey)
         }
     }
 
     static func reset() {
-        UserDefaults.standard.removeObject(forKey: statusIconVisibleKey)
+        defaults.removeObject(forKey: statusIconVisibleKey)
+        defaults.removeObject(forKey: automaticModifierKey)
     }
 }

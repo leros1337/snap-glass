@@ -6,7 +6,7 @@ SnapGlass is a small Apple silicon macOS menu bar app inspired by Snap.
 
 It provides:
 
-- automatic Dock shortcuts using a selected modifier plus number keys
+- automatic Dock shortcuts using a selected modifier plus number keys (the modifier choice is remembered across launches)
 - manual shortcuts for any installed app
 - app peeking, where pressing a shortcut again shortly after activation hides the app
 - a macOS 26 Liquid Glass preferences window
